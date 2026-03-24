@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Dataset (VERY IMPORTANT - don't push)
+dataset/
+
+# Embeddings (large files)
+embeddings/
+*.npy
+
+# Test images (optional)
+test_images/
+
+# VS Code settings
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
