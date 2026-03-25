@@ -1,23 +1,35 @@
 import numpy as np
+import faiss
 from feature_extractor import extract_features
 
-# Load saved embeddings
-features_db = np.load("embeddings/features.npy")
+# Load embeddings
+features_db = np.load("embeddings/features.npy").astype("float32")
 paths_db = np.load("embeddings/paths.npy")
 
-def cosine_similarity(a, b):
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+# Normalize vectors (important for cosine similarity)
+faiss.normalize_L2(features_db)
+
+# Build FAISS index
+dimension = features_db.shape[1]
+index = faiss.IndexFlatIP(dimension)  # Inner Product = cosine similarity after normalization
+index.add(features_db)
+
+print("FAISS index built successfully.")
 
 def search(query_image, top_k=5):
-    query_feat = extract_features(query_image)
+    query_feat = extract_features(query_image).astype("float32")
+    query_feat = np.expand_dims(query_feat, axis=0)
 
-    similarities = []
+    # Normalize query
+    faiss.normalize_L2(query_feat)
 
-    for i in range(len(features_db)):
-        sim = cosine_similarity(query_feat, features_db[i])
-        similarities.append((sim, paths_db[i]))
+    # Search
+    scores, indices = index.search(query_feat, top_k)
 
-    # Sort by similarity
-    similarities.sort(reverse=True, key=lambda x: x[0])
+    results = []
+    for i in range(top_k):
+        score = scores[0][i]
+        path = paths_db[indices[0][i]]
+        results.append((score, path))
 
-    return similarities[:top_k]
+    return results
