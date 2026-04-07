@@ -16,12 +16,31 @@ embedding - Similar images are retrieved using FAISS
 
 ## 🏗️ Project Structure
 
-mv/ ├── backend/ │ ├── dataset/ │ ├── embeddings/ │ ├──
-build_embeddings.py │ ├── feature_extractor.py │ ├── merge_embeddings.py
-│ ├── search.py │ ├── main.py │ ├── requirements.txt │ ├── frontend/ │
-├── public/ │ ├── src/ │ │ ├── App.jsx │ │ ├── main.jsx │ │ ├── App.css
-│ │ ├── index.css │ ├── package.json │ ├── vite.config.js │ ├──
-test_images/ ├── venv/ └── README.md
+mv/
+│
+├── backend/
+│   ├── dataset/                # Image dataset
+│   ├── embeddings/             # Stored feature vectors
+│   ├── build_embeddings.py     # Script to generate embeddings
+│   ├── feature_extractor.py    # ResNet50 feature extraction
+│   ├── merge_embeddings.py     # Combine embeddings
+│   ├── search.py               # FAISS similarity search
+│   ├── main.py                 # FastAPI server
+│   ├── requirements.txt        # Python dependencies
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── App.jsx             # Main React component
+│   │   ├── main.jsx
+│   │   ├── App.css
+│   │   ├── index.css
+│   ├── package.json
+│   ├── vite.config.js
+│
+├── test_images/                # Sample query images
+├── venv/                       # Python virtual environment
+└── README.md
 
 ------------------------------------------------------------------------
 
@@ -82,7 +101,7 @@ AI/ML: ResNet50, FAISS, NumPy, OpenCV
 
 cd backend\
 python -m venv venv\
-venv`\Scripts`{=tex}`\activate  `{=tex} pip install -r requirements.txt
+venv`\Scripts``\activate  ` pip install -r requirements.txt
 
 Generate embeddings: python build_embeddings.py\
 python merge_embeddings.py
