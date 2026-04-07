@@ -72,7 +72,7 @@ function Navbar({ onSearchClick }) {
           </svg>
         </div>
         <span style={{ fontSize: 16, fontWeight: 700, color: "#f4f4f5", letterSpacing: -0.3 }}>
-          Visual<span style={{ color: "#E60023" }}>Find</span>
+          Image<span style={{ color: "#E60023" }}>Lens</span>
         </span>
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
