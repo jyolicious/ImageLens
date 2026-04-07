@@ -1,405 +1,650 @@
-import { useState, useCallback, useRef } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer
-} from "recharts";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 const API = "http://localhost:8000";
 
-const COLORS = ["#6EE7B7", "#34D399", "#10B981", "#059669", "#047857"];
+const GLOBAL_STYLES = `
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #09090b;
+  color: #f4f4f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
 
-function CosinePlot({ results }) {
-  if (!results.length) return null;
-  const data = results.map((r) => ({
-    name: `#${r.rank}`,
-    score: parseFloat((r.score * 100).toFixed(1)),
-    path: r.path.split(/[\\/]/).pop(),
-  }));
+@keyframes fadeUp   { from { opacity:0; transform:translateY(24px) } to { opacity:1; transform:translateY(0) } }
+@keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
+@keyframes spin     { to   { transform: rotate(360deg) } }
+@keyframes pulse    { 0%,100% { opacity:.5 } 50% { opacity:1 } }
+@keyframes slideRight { from { opacity:0; transform:translateX(-16px) } to { opacity:1; transform:translateX(0) } }
 
-  const CustomTooltip = ({ active, payload }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div style={{
-        background: "#0f1923", border: "1px solid #1e3a2f",
-        borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#a7f3d0"
-      }}>
-        <div style={{ fontWeight: 700, marginBottom: 4, color: "#6EE7B7" }}>
-          {payload[0].payload.path}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 2px; }
+
+.glass {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(20px);
+  border: 0.5px solid rgba(255,255,255,0.08);
+}
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #E60023; color: #fff;
+  border: none; border-radius: 6px;
+  padding: 11px 24px; font-size: 13px; font-weight: 600;
+  font-family: inherit;
+  cursor: pointer; transition: all 0.15s ease;
+  letter-spacing: 0.01em;
+}
+.btn-primary:hover { background: #cc0020; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(230,0,35,0.3); }
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: transparent; color: #a1a1aa;
+  border: 0.5px solid #3f3f46; border-radius: 6px;
+  padding: 11px 24px; font-size: 13px; font-weight: 500;
+  font-family: inherit;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.btn-ghost:hover { color: #f4f4f5; border-color: #71717a; background: rgba(255,255,255,0.04); }
+`;
+
+// ─── Navbar ─────────────────────────────────────────────────────────────────
+function Navbar({ onSearchClick }) {
+  return (
+    <nav style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
+      background: "rgba(9,9,11,0.85)", backdropFilter: "blur(20px)",
+      borderBottom: "0.5px solid rgba(255,255,255,0.06)",
+      padding: "0 40px", height: 56,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 4,
+          background: "#E60023", display: "flex", alignItems: "center",
+          justifyContent: "center",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="2.5" fill="white"/>
+            <line x1="7" y1="1" x2="7" y2="4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="7" y1="10" x2="7" y2="13" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="1" y1="7" x2="4" y2="7" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="10" y1="7" x2="13" y2="7" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
         </div>
-        <div>Cosine Similarity: <strong>{payload[0].value}%</strong></div>
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#f4f4f5", letterSpacing: -0.3 }}>
+          Visual<span style={{ color: "#E60023" }}>Find</span>
+        </span>
       </div>
-    );
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <span style={{ fontSize: 12, color: "#52525b", fontFamily: "monospace" }}>ResNet50 · FAISS</span>
+        <button className="btn-primary" onClick={onSearchClick} style={{ padding: "8px 18px", fontSize: 12 }}>
+          Try it
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+// ─── Hero ────────────────────────────────────────────────────────────────────
+function Hero({ onSearchClick }) {
+  return (
+    <section style={{
+      minHeight: "100vh", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", textAlign: "center",
+      padding: "120px 40px 80px", position: "relative", overflow: "hidden",
+    }}>
+      <div style={{
+        position: "absolute", top: "20%", left: "50%", transform: "translateX(-50%)",
+        width: 500, height: 500, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(230,0,35,0.10) 0%, transparent 70%)",
+        pointerEvents: "none",
+      }} />
+
+      {/* Badge */}
+      <div style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        background: "rgba(230,0,35,0.08)", border: "0.5px solid rgba(230,0,35,0.25)",
+        borderRadius: 4, padding: "5px 12px", marginBottom: 28,
+        animation: "fadeUp 0.5s ease both",
+      }}>
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#E60023", animation: "pulse 2s infinite" }} />
+        <span style={{ fontSize: 11, color: "#E60023", fontWeight: 700, letterSpacing: 0.8 }}>
+          AI-POWERED VISUAL SEARCH
+        </span>
+      </div>
+
+      <h1 style={{
+        fontSize: "clamp(40px, 6vw, 72px)", fontWeight: 700,
+        color: "#f4f4f5", lineHeight: 1.08, letterSpacing: -2,
+        marginBottom: 20, maxWidth: 720,
+        animation: "fadeUp 0.6s ease 0.1s both",
+      }}>
+        Find images by<br />
+        <span style={{ color: "#E60023" }}>what they look like</span>
+      </h1>
+
+      <p style={{
+        fontSize: 16, color: "#71717a", lineHeight: 1.7, maxWidth: 480,
+        marginBottom: 36, fontWeight: 400,
+        animation: "fadeUp 0.6s ease 0.2s both",
+      }}>
+        Upload any image. Deep learning extracts visual features and retrieves the most similar images from your dataset in milliseconds.
+      </p>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", animation: "fadeUp 0.6s ease 0.3s both" }}>
+        <button className="btn-primary" onClick={onSearchClick} style={{ fontSize: 14, padding: "12px 28px" }}>
+          Upload an image
+        </button>
+        <button className="btn-ghost" onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}>
+          See how it works
+        </button>
+      </div>
+
+      {/* Stat cards */}
+      <div style={{
+        display: "flex", gap: 12, marginTop: 64, flexWrap: "wrap", justifyContent: "center",
+        animation: "fadeUp 0.6s ease 0.5s both",
+      }}>
+        {[
+          { label: "Feature dims", value: "2048-D" },
+          { label: "Search speed", value: "< 50 ms" },
+          { label: "Similarity", value: "Cosine" },
+        ].map((s, i) => (
+          <div key={i} className="glass" style={{
+            borderRadius: 8, padding: "14px 22px", textAlign: "center", minWidth: 110,
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#f4f4f5", letterSpacing: -0.5 }}>{s.value}</div>
+            <div style={{ fontSize: 11, color: "#52525b", marginTop: 3, letterSpacing: 0.4, textTransform: "uppercase" }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Pipeline / How it works ─────────────────────────────────────────────────
+function Pipeline() {
+  const steps = [
+    { step: "01", title: "Upload", sub: "JPG / PNG input", color: "#71717a", border: "#3f3f46" },
+    { step: "02", title: "ResNet50", sub: "2048-D feature vector", color: "#60a5fa", border: "#1d4ed8" },
+    { step: "03", title: "L2 Norm", sub: "Cosine-ready", color: "#a78bfa", border: "#6d28d9" },
+    { step: "04", title: "FAISS ANN", sub: "Index search", color: "#34d399", border: "#065f46" },
+    { step: "05", title: "Top-K", sub: "Ranked results", color: "#86efac", border: "#15803d" },
+  ];
+
+  return (
+    <section id="how-it-works" style={{ padding: "80px 40px", maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ textAlign: "center", marginBottom: 56 }}>
+        <div style={{
+          display: "inline-block",
+          background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)",
+          borderRadius: 4, padding: "5px 12px", marginBottom: 16,
+        }}>
+          <span style={{ fontSize: 11, color: "#52525b", fontWeight: 700, letterSpacing: 0.8 }}>HOW IT WORKS</span>
+        </div>
+        <h2 style={{
+          fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 700,
+          color: "#f4f4f5", letterSpacing: -1.2, lineHeight: 1.1,
+        }}>
+          From pixels to similarity scores
+        </h2>
+        <p style={{ color: "#52525b", marginTop: 12, fontSize: 14, maxWidth: 420, margin: "12px auto 0" }}>
+          Five stages of deep learning inference and vector search — end-to-end in under 50 ms.
+        </p>
+      </div>
+
+      {/* Horizontal pipeline */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: 0, overflowX: "auto", padding: "8px 0",
+      }}>
+        {steps.map((s, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            {/* Node */}
+            <div style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              animation: `fadeUp 0.5s ease ${i * 0.08}s both`,
+            }}>
+              {/* Step number */}
+              <span style={{
+                fontSize: 10, fontWeight: 700, color: s.color,
+                letterSpacing: 1, marginBottom: 8, fontFamily: "monospace",
+              }}>{s.step}</span>
+              {/* Box */}
+              <div style={{
+                width: 110, padding: "14px 10px",
+                background: "rgba(255,255,255,0.03)",
+                border: `0.5px solid ${s.border}`,
+                borderRadius: 6,
+                textAlign: "center",
+                transition: "all 0.15s",
+                cursor: "default",
+              }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: s.color, marginBottom: 4 }}>{s.title}</div>
+                <div style={{ fontSize: 11, color: "#52525b", lineHeight: 1.4 }}>{s.sub}</div>
+              </div>
+            </div>
+
+            {/* Arrow connector */}
+            {i < steps.length - 1 && (
+              <div style={{
+                width: 32, display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, marginTop: 24,
+              }}>
+                <svg width="28" height="12" viewBox="0 0 28 12" fill="none">
+                  <line x1="0" y1="6" x2="20" y2="6" stroke="#3f3f46" strokeWidth="1"/>
+                  <polyline points="14,2 20,6 14,10" fill="none" stroke="#3f3f46" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Latency bar */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12, marginTop: 32,
+        justifyContent: "center",
+      }}>
+        <div style={{ height: 1, width: 60, background: "#27272a" }} />
+        <span style={{ fontSize: 11, color: "#3f3f46", fontFamily: "monospace", letterSpacing: 0.5 }}>
+          end-to-end &lt; 50 ms
+        </span>
+        <div style={{ height: 1, width: 60, background: "#27272a" }} />
+      </div>
+
+      {/* Tech stack pills */}
+      <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 40, flexWrap: "wrap" }}>
+        {["ResNet50", "FAISS", "FastAPI", "React", "PyTorch", "Cosine Similarity"].map((t, i) => (
+          <span key={i} style={{
+            background: "rgba(255,255,255,0.03)", border: "0.5px solid rgba(255,255,255,0.08)",
+            borderRadius: 4, padding: "4px 12px", fontSize: 11, color: "#71717a",
+            fontFamily: "monospace",
+          }}>{t}</span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Upload Zone ─────────────────────────────────────────────────────────────
+function UploadZone({ onFile, error }) {
+  const [drag, setDrag] = useState(false);
+  const ref = useRef();
+
+  const onDrop = e => {
+    e.preventDefault(); setDrag(false);
+    const f = e.dataTransfer.files[0];
+    if (f?.type.startsWith("image/")) onFile(f);
   };
 
   return (
-    <div style={{
-      background: "linear-gradient(145deg,#0a1a12,#0f2318)",
-      border: "1px solid #1a3a28",
-      borderRadius: 16, padding: "20px 16px 12px",
+    <section id="search" style={{
+      padding: "60px 40px 120px",
+      display: "flex", flexDirection: "column", alignItems: "center",
     }}>
-      <div style={{ fontSize: 11, letterSpacing: 3, color: "#34D399", fontWeight: 700, marginBottom: 16, textTransform: "uppercase" }}>
-        ◈ Cosine Similarity Distribution
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
+        <h2 style={{
+          fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 700,
+          color: "#f4f4f5", letterSpacing: -1.2, lineHeight: 1.1, marginBottom: 10,
+        }}>
+          Search by image
+        </h2>
+        <p style={{ color: "#52525b", fontSize: 14 }}>
+          Drop any image and discover visually similar results
+        </p>
       </div>
-      <ResponsiveContainer width="100%" height={180}>
-        <BarChart data={data} barSize={32}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1a3a28" vertical={false} />
-          <XAxis dataKey="name" tick={{ fill: "#6EE7B7", fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} />
-          <YAxis domain={[0, 100]} tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(110,231,183,0.05)" }} />
-          <Bar dataKey="score" radius={[6, 6, 0, 0]}>
-            {data.map((_, i) => (
-              <Cell key={i} fill={COLORS[i % COLORS.length]} opacity={1 - i * 0.12} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
 
-function SuggestionCard({ suggestion }) {
-  if (!suggestion) return null;
-  return (
-    <div style={{
-      background: "linear-gradient(135deg,#0a1a12 60%,#082010)",
-      border: "1px solid #1a3a28",
-      borderRadius: 16, padding: "20px 22px",
-      position: "relative", overflow: "hidden",
-    }}>
-      <div style={{
-        position: "absolute", top: -20, right: -20,
-        fontSize: 90, opacity: 0.08, pointerEvents: "none", userSelect: "none",
-      }}>{suggestion.emoji}</div>
-      <div style={{ fontSize: 11, letterSpacing: 3, color: "#34D399", fontWeight: 700, marginBottom: 10, textTransform: "uppercase" }}>
-        ◈ Activity Suggestion
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <span style={{ fontSize: 36 }}>{suggestion.emoji}</span>
-        <span style={{
-          fontSize: 20, fontWeight: 800, color: "#ecfdf5",
-          fontFamily: "'DM Serif Display', Georgia, serif",
-          letterSpacing: -0.5,
-        }}>{suggestion.label}</span>
-      </div>
-      <p style={{
-        color: "#86efac", fontSize: 13.5, lineHeight: 1.6, margin: 0,
-        fontStyle: "italic",
-      }}>"{suggestion.tip}"</p>
-    </div>
-  );
-}
-
-function ResultCard({ result, active, onClick }) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        cursor: "pointer",
-        border: active ? "2px solid #6EE7B7" : "1px solid #1a3a28",
-        borderRadius: 14, overflow: "hidden",
-        background: active ? "#0a1a12" : "#080f0a",
-        transition: "all 0.2s",
-        boxShadow: active ? "0 0 18px rgba(110,231,183,0.18)" : "none",
-        transform: active ? "scale(1.02)" : "scale(1)",
-      }}
-    >
-      {result.image_b64 ? (
-        <img
-          src={`data:image/jpeg;base64,${result.image_b64}`}
-          alt={`result-${result.rank}`}
-          style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }}
-        />
-      ) : (
-        <div style={{ width: "100%", aspectRatio: "1", background: "#0a1a12", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ color: "#374151", fontSize: 24 }}>🖼️</span>
+      {error && (
+        <div style={{
+          background: "rgba(230,0,35,0.07)", border: "0.5px solid rgba(230,0,35,0.25)",
+          borderRadius: 6, padding: "10px 18px", marginBottom: 20,
+          fontSize: 12, color: "#fca5a5", maxWidth: 480, width: "100%", textAlign: "center",
+          fontFamily: "monospace",
+        }}>
+          {error} — is the backend running on port 8000?
         </div>
       )}
-      <div style={{ padding: "10px 12px" }}>
+
+      <div
+        onDragOver={e => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={onDrop}
+        onClick={() => ref.current?.click()}
+        style={{
+          width: "100%", maxWidth: 520,
+          border: `1px dashed ${drag ? "#E60023" : "#27272a"}`,
+          borderRadius: 12, padding: "64px 40px", textAlign: "center",
+          cursor: "pointer",
+          background: drag ? "rgba(230,0,35,0.04)" : "rgba(255,255,255,0.01)",
+          transition: "all 0.2s ease",
+          boxShadow: drag ? "0 0 0 4px rgba(230,0,35,0.06)" : "none",
+        }}
+      >
+        {/* Upload icon */}
         <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
+          width: 56, height: 56, borderRadius: 8,
+          background: "rgba(230,0,35,0.08)", border: "0.5px solid rgba(230,0,35,0.2)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          margin: "0 auto 20px",
         }}>
-          <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Rank #{result.rank}</span>
-          <span style={{
-            fontSize: 12, fontWeight: 800,
-            color: result.score > 0.85 ? "#6EE7B7" : result.score > 0.7 ? "#fcd34d" : "#f87171",
-          }}>{(result.score * 100).toFixed(1)}%</span>
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <path d="M11 14V4M11 4L7 8M11 4L15 8" stroke="#E60023" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M3 16v1a2 2 0 002 2h12a2 2 0 002-2v-1" stroke="#E60023" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
         </div>
-        <div style={{
-          fontSize: 10, color: "#4b5563", marginTop: 3, whiteSpace: "nowrap",
-          overflow: "hidden", textOverflow: "ellipsis",
-        }}>
-          {result.path.split(/[\\/]/).pop()}
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#f4f4f5", marginBottom: 6 }}>
+          Drop your image here
+        </div>
+        <div style={{ fontSize: 12, color: "#3f3f46", marginBottom: 24 }}>
+          JPG, PNG supported · or click to browse
+        </div>
+        <button className="btn-primary" style={{ pointerEvents: "none" }}>
+          Choose image
+        </button>
+      </div>
+      <input ref={ref} type="file" accept="image/*"
+        onChange={e => { const f = e.target.files[0]; if (f) onFile(f); }}
+        style={{ display: "none" }} />
+    </section>
+  );
+}
+
+// ─── Loader ──────────────────────────────────────────────────────────────────
+function Loader() {
+  const dots = ["Extracting features", "Normalizing vectors", "Running FAISS search", "Ranking results"];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % dots.length), 900);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{
+      minHeight: "60vh", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 20, padding: 40,
+    }}>
+      <div style={{
+        width: 44, height: 44, borderRadius: "50%",
+        border: "1.5px solid rgba(255,255,255,0.06)",
+        borderTop: "1.5px solid #E60023",
+        animation: "spin 0.8s linear infinite",
+      }} />
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#f4f4f5", marginBottom: 6 }}>
+          Searching visually
+        </div>
+        <div style={{ fontSize: 12, color: "#52525b", fontFamily: "monospace", animation: "pulse 0.9s ease-in-out infinite" }}>
+          {dots[idx]}
         </div>
       </div>
     </div>
   );
 }
 
+// ─── Result Card ─────────────────────────────────────────────────────────────
+function ResultCard({ result, index, selected, onSelect }) {
+  const ACCENT_COLORS = ["#E60023", "#60a5fa", "#34d399", "#a78bfa", "#fb923c"];
+  const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
+  const score = Math.round(result.score * 100);
+
+  return (
+    <div
+      onClick={() => onSelect(result)}
+      style={{
+        borderRadius: 10, overflow: "hidden", cursor: "pointer",
+        background: "rgba(255,255,255,0.02)",
+        border: selected ? `1px solid ${accent}` : "0.5px solid rgba(255,255,255,0.07)",
+        transform: selected ? "scale(1.02)" : "scale(1)",
+        transition: "all 0.2s ease",
+        animation: `fadeUp 0.4s ease ${index * 60}ms both`,
+      }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
+    >
+      {/* Image */}
+      <div style={{ position: "relative", overflow: "hidden", aspectRatio: "1 / 1" }}>
+        {result.image_b64 ? (
+          <img
+            src={`data:image/jpeg;base64,${result.image_b64}`}
+            alt={`result-${result.rank}`}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+        ) : (
+          <div style={{
+            width: "100%", height: "100%", background: "#18181b",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect x="4" y="6" width="24" height="20" rx="3" stroke="#3f3f46" strokeWidth="1.5"/>
+              <circle cx="11" cy="13" r="2.5" stroke="#3f3f46" strokeWidth="1.5"/>
+              <path d="M4 22l6-5 5 4 4-3 9 7" stroke="#3f3f46" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        )}
+
+        {/* Score badge */}
+        <div style={{
+          position: "absolute", top: 8, right: 8,
+          background: "rgba(9,9,11,0.85)", backdropFilter: "blur(8px)",
+          borderRadius: 4, padding: "3px 8px",
+          fontSize: 11, fontWeight: 700, color: accent,
+          fontFamily: "monospace",
+        }}>
+          {score}%
+        </div>
+
+        {/* Rank */}
+        <div style={{
+          position: "absolute", top: 8, left: 8,
+          background: "rgba(9,9,11,0.85)", backdropFilter: "blur(8px)",
+          borderRadius: 4, padding: "3px 8px",
+          fontSize: 11, fontWeight: 600, color: "#52525b",
+          fontFamily: "monospace",
+        }}>
+          #{result.rank}
+        </div>
+      </div>
+
+      {/* Info */}
+      <div style={{ padding: "12px 14px 14px" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e4e4e7", marginBottom: 4 }}>
+          {result.suggestion?.label || "Similar Image"}
+        </div>
+        <p style={{ fontSize: 11.5, color: "#52525b", lineHeight: 1.5, margin: 0 }}>
+          {result.suggestion?.tip || "Visually similar to your query image."}
+        </p>
+
+        {/* Score bar */}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ height: 2, background: "rgba(255,255,255,0.05)", borderRadius: 1, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${score}%`,
+              background: accent, borderRadius: 1,
+              transition: "width 0.8s ease",
+            }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Results View ─────────────────────────────────────────────────────────────
+function ResultsView({ queryB64, results, onNewSearch }) {
+  const [selected, setSelected] = useState(null);
+
+  const handleSelect = r => setSelected(prev => prev?.rank === r.rank ? null : r);
+
+  return (
+    <div>
+      {/* Results bar */}
+      <div className="glass" style={{
+        position: "sticky", top: 56, zIndex: 100,
+        padding: "12px 40px",
+        display: "flex", alignItems: "center", gap: 16,
+        animation: "fadeIn 0.3s ease",
+      }}>
+        {queryB64 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img
+              src={`data:image/jpeg;base64,${queryB64}`}
+              style={{ width: 36, height: 36, borderRadius: 4, objectFit: "cover", border: "1px solid #E60023" }}
+              alt="query"
+            />
+            <div>
+              <div style={{ fontSize: 10, color: "#3f3f46", letterSpacing: 0.6, fontWeight: 700 }}>QUERY</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#f4f4f5" }}>{results.length} results</div>
+            </div>
+          </div>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: "#3f3f46", fontFamily: "monospace" }}>ResNet50 · FAISS · Cosine</span>
+          <button className="btn-primary" onClick={onNewSearch} style={{ padding: "8px 16px", fontSize: 12 }}>
+            New search
+          </button>
+        </div>
+      </div>
+
+      {/* Selected detail */}
+      {selected && (
+        <div className="glass" style={{
+          padding: "24px 40px",
+          display: "flex", gap: 24, alignItems: "flex-start",
+          animation: "slideRight 0.25s ease",
+          borderBottom: "0.5px solid rgba(255,255,255,0.06)",
+        }}>
+          <img
+            src={`data:image/jpeg;base64,${selected.image_b64}`}
+            style={{
+              width: 120, height: 120, objectFit: "cover",
+              borderRadius: 8, flexShrink: 0,
+              border: "0.5px solid rgba(255,255,255,0.1)",
+            }}
+            alt="selected"
+          />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "#f4f4f5" }}>
+                {selected.suggestion?.label}
+              </span>
+              <span style={{
+                marginLeft: "auto",
+                background: "rgba(230,0,35,0.10)", color: "#E60023",
+                border: "0.5px solid rgba(230,0,35,0.25)",
+                borderRadius: 4, padding: "4px 12px",
+                fontSize: 12, fontWeight: 700, fontFamily: "monospace",
+              }}>
+                {Math.round(selected.score * 100)}% match
+              </span>
+            </div>
+            <p style={{ fontSize: 13, color: "#71717a", lineHeight: 1.65, maxWidth: 520, marginBottom: 8 }}>
+              {selected.suggestion?.tip}
+            </p>
+            <div style={{ fontSize: 10, color: "#27272a", fontFamily: "monospace" }}>{selected.path}</div>
+          </div>
+          <button
+            onClick={() => setSelected(null)}
+            style={{
+              background: "rgba(255,255,255,0.05)", border: "0.5px solid rgba(255,255,255,0.1)",
+              borderRadius: 4, width: 32, height: 32, cursor: "pointer",
+              fontSize: 16, color: "#52525b", display: "flex",
+              alignItems: "center", justifyContent: "center", flexShrink: 0,
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+            onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+          >×</button>
+        </div>
+      )}
+
+      {/* Grid */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+        gap: 16,
+        padding: "28px 40px 80px",
+        maxWidth: 1400, margin: "0 auto",
+      }}>
+        {results.map((r, i) => (
+          <ResultCard
+            key={i} result={r} index={i}
+            selected={selected?.rank === r.rank}
+            onSelect={handleSelect}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [dragging, setDragging] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
+  const [view, setView] = useState("landing");
   const [queryB64, setQueryB64] = useState(null);
-  const [results, setResults]   = useState([]);
-  const [selected, setSelected] = useState(0);
-  const fileRef = useRef();
+  const [results, setResults] = useState([]);
+  const [error, setError] = useState(null);
 
   const doSearch = useCallback(async (file) => {
-    setLoading(true);
+    setView("loading");
     setError(null);
-    setResults([]);
-    setSelected(0);
-    setQueryB64(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("top_k", 5);
+      fd.append("top_k", 10);
       const res = await fetch(`${API}/search`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       setQueryB64(data.query_image_b64);
       setResults(data.results);
+      setView("results");
     } catch (e) {
       setError(e.message);
-    } finally {
-      setLoading(false);
+      setView("landing");
     }
   }, []);
 
-  const onDrop = useCallback((e) => {
-    e.preventDefault();
-    setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file?.type.startsWith("image/")) doSearch(file);
-  }, [doSearch]);
-
-  const onFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) doSearch(file);
+  const scrollToSearch = () => {
+    document.getElementById("search")?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const activeResult = results[selected];
-
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#050d08",
-      fontFamily: "'DM Sans', 'Segoe UI', sans-serif",
-      color: "#e5e7eb",
-    }}>
-      {/* Google Fonts */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #050d08; }
-        ::-webkit-scrollbar-thumb { background: #1a3a28; border-radius: 3px; }
-        body { background: #050d08; }
-      `}</style>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: GLOBAL_STYLES }} />
+      <Navbar onSearchClick={view === "landing" ? scrollToSearch : () => setView("landing")} />
 
-      {/* Header */}
-      <header style={{
-        padding: "22px 40px",
-        borderBottom: "1px solid #0f2318",
-        display: "flex", alignItems: "center", gap: 16,
-        background: "rgba(5,13,8,0.95)", backdropFilter: "blur(10px)",
-        position: "sticky", top: 0, zIndex: 100,
-      }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: "linear-gradient(135deg,#6EE7B7,#059669)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 18,
-        }}>🔍</div>
-        <div>
-          <div style={{
-            fontFamily: "'DM Serif Display', serif",
-            fontSize: 20, color: "#ecfdf5", letterSpacing: -0.5,
-          }}>VisualSearch<span style={{ color: "#6EE7B7" }}>.</span>ai</div>
-          <div style={{ fontSize: 10, color: "#4b5563", letterSpacing: 2, textTransform: "uppercase" }}>
-            Deep Visual Retrieval Engine
-          </div>
+      {view === "landing" && (
+        <>
+          <Hero onSearchClick={scrollToSearch} />
+          <Pipeline />
+          <UploadZone onFile={doSearch} error={error} />
+        </>
+      )}
+
+      {view === "loading" && (
+        <div style={{ paddingTop: 56 }}>
+          <Loader />
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: "50%", background: "#6EE7B7",
-            boxShadow: "0 0 8px #6EE7B7", animation: "pulse 2s infinite",
-          }} />
-          <span style={{ fontSize: 11, color: "#6EE7B7", letterSpacing: 1 }}>LIVE</span>
+      )}
+
+      {view === "results" && (
+        <div style={{ paddingTop: 56 }}>
+          <ResultsView
+            queryB64={queryB64}
+            results={results}
+            onNewSearch={() => setView("landing")}
+          />
         </div>
-        <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }`}</style>
-      </header>
-
-      <div style={{ maxWidth: 1300, margin: "0 auto", padding: "32px 24px" }}>
-        {/* Upload Zone */}
-        {!results.length && !loading && (
-          <div style={{ maxWidth: 560, margin: "60px auto 0" }}>
-            <div style={{ textAlign: "center", marginBottom: 32 }}>
-              <div style={{
-                fontFamily: "'DM Serif Display', serif",
-                fontSize: 42, color: "#ecfdf5", letterSpacing: -1, lineHeight: 1.1, marginBottom: 12,
-              }}>
-                Find Anything<br />
-                <span style={{ color: "#6EE7B7" }}>Visually.</span>
-              </div>
-              <p style={{ color: "#6b7280", fontSize: 14, lineHeight: 1.7 }}>
-                Upload an image to retrieve the most visually similar items<br />
-                from the dataset using ResNet50 + FAISS similarity search.
-              </p>
-            </div>
-
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-              onClick={() => fileRef.current?.click()}
-              style={{
-                border: `2px dashed ${dragging ? "#6EE7B7" : "#1a3a28"}`,
-                borderRadius: 20, padding: "60px 40px",
-                textAlign: "center", cursor: "pointer",
-                background: dragging ? "rgba(110,231,183,0.04)" : "#080f0a",
-                transition: "all 0.25s",
-                boxShadow: dragging ? "0 0 30px rgba(110,231,183,0.1)" : "none",
-              }}
-            >
-              <div style={{ fontSize: 48, marginBottom: 16 }}>⬆️</div>
-              <div style={{ color: "#d1fae5", fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
-                Drop your image here
-              </div>
-              <div style={{ color: "#4b5563", fontSize: 13 }}>
-                or <span style={{ color: "#6EE7B7", textDecoration: "underline" }}>browse files</span>
-                <br /><span style={{ fontSize: 11 }}>JPG, PNG, JPEG supported</span>
-              </div>
-            </div>
-            <input ref={fileRef} type="file" accept="image/*" onChange={onFileChange} style={{ display: "none" }} />
-          </div>
-        )}
-
-        {/* Loading */}
-        {loading && (
-          <div style={{ textAlign: "center", padding: "80px 0" }}>
-            <div style={{ fontSize: 48, marginBottom: 20, animation: "spin 1.2s linear infinite", display: "inline-block" }}>⚙️</div>
-            <div style={{ color: "#6EE7B7", fontSize: 16, fontWeight: 600, letterSpacing: 1 }}>Extracting features & searching…</div>
-            <div style={{ color: "#4b5563", fontSize: 13, marginTop: 8 }}>Running ResNet50 → FAISS cosine search</div>
-            <style>{`@keyframes spin { from { transform:rotate(0deg) } to { transform:rotate(360deg) } }`}</style>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div style={{
-            background: "#1c0a0a", border: "1px solid #7f1d1d", borderRadius: 12,
-            padding: "16px 20px", maxWidth: 480, margin: "40px auto", color: "#fca5a5",
-          }}>
-            ⚠️ {error}
-            <br /><span style={{ fontSize: 12, color: "#6b7280" }}>Make sure the FastAPI backend is running on port 8000</span>
-          </div>
-        )}
-
-        {/* Results Layout */}
-        {results.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
-
-            {/* LEFT — Results Grid */}
-            <div>
-              <div style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                marginBottom: 14,
-              }}>
-                <div style={{ fontSize: 11, letterSpacing: 3, color: "#34D399", fontWeight: 700, textTransform: "uppercase" }}>
-                  ◈ Top {results.length} Matches
-                </div>
-                <button
-                  onClick={() => { setResults([]); setQueryB64(null); }}
-                  style={{
-                    background: "transparent", border: "1px solid #1a3a28",
-                    borderRadius: 8, padding: "4px 10px", color: "#6b7280",
-                    fontSize: 11, cursor: "pointer",
-                  }}
-                >↩ New Search</button>
-              </div>
-
-              {/* Query image */}
-              {queryB64 && (
-                <div style={{ marginBottom: 16, borderRadius: 14, overflow: "hidden", border: "1px solid #1a3a28" }}>
-                  <img src={`data:image/jpeg;base64,${queryB64}`}
-                    alt="query"
-                    style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }}
-                  />
-                  <div style={{ padding: "8px 12px", background: "#050d08", fontSize: 10, color: "#4b5563", letterSpacing: 1, textTransform: "uppercase" }}>
-                    🔍 Your Query Image
-                  </div>
-                </div>
-              )}
-
-              {/* Thumbnail grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {results.map((r, i) => (
-                  <ResultCard key={i} result={r} active={selected === i} onClick={() => setSelected(i)} />
-                ))}
-              </div>
-            </div>
-
-            {/* RIGHT */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-              {/* Top: Cosine similarity chart */}
-              <CosinePlot results={results} />
-
-              {/* Middle: Selected image large view */}
-              {activeResult && (
-                <div style={{
-                  display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20,
-                }}>
-                  <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid #1a3a28" }}>
-                    {activeResult.image_b64 ? (
-                      <img src={`data:image/jpeg;base64,${activeResult.image_b64}`}
-                        alt="selected"
-                        style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }}
-                      />
-                    ) : (
-                      <div style={{ width: "100%", aspectRatio: "1", background: "#0a1a12", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🖼️</div>
-                    )}
-                    <div style={{ padding: "12px 14px", background: "#080f0a" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 12, color: "#6b7280" }}>Match #{activeResult.rank}</span>
-                        <span style={{
-                          fontSize: 16, fontWeight: 800,
-                          color: activeResult.score > 0.85 ? "#6EE7B7" : activeResult.score > 0.7 ? "#fcd34d" : "#f87171",
-                        }}>{(activeResult.score * 100).toFixed(1)}%</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: "#374151", marginTop: 4, wordBreak: "break-all" }}>
-                        {activeResult.path}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Suggestion card */}
-                  <SuggestionCard suggestion={activeResult.suggestion} />
-                </div>
-              )}
-
-              {/* Score badges row */}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {results.map((r, i) => (
-                  <div key={i}
-                    onClick={() => setSelected(i)}
-                    style={{
-                      padding: "8px 16px", borderRadius: 999,
-                      background: selected === i ? "#6EE7B7" : "#0a1a12",
-                      color: selected === i ? "#050d08" : "#6EE7B7",
-                      border: "1px solid #1a3a28",
-                      fontSize: 13, fontWeight: 700, cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    #{r.rank} · {(r.score * 100).toFixed(0)}%
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 }
