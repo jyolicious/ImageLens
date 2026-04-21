@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 import numpy as np
 import faiss
 import torch
@@ -9,6 +10,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import io
 import os
+import cv2
 import base64
 from contextlib import asynccontextmanager
 
@@ -44,6 +46,10 @@ def extract_features_from_pil(image: Image.Image):
     with torch.no_grad():
         feat = model_global(img_t)
     return feat.squeeze().numpy()
+
+def encode_img(img):
+    _, buf = cv2.imencode(".png", img)
+    return base64.b64encode(buf).decode("utf-8")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -154,3 +160,46 @@ async def search_endpoint(file: UploadFile = File(...), top_k: int = 5):
 @app.get("/health")
 def health():
     return {"status": "ok", "index_size": index_global.ntotal if index_global else 0}
+
+@app.post("/preprocess")
+async def run_preprocess(file: UploadFile = File(...)):
+    data = await file.read()
+    arr  = np.frombuffer(data, dtype=np.uint8)
+    img  = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+    if img is None:
+        return JSONResponse({"error": "bad image"}, status_code=400)
+
+    # Resize for consistency
+    img   = cv2.resize(img, (400, 400))
+
+    # Processing steps
+    gray  = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    eq    = cv2.equalizeHist(gray)
+    otsu, _ = cv2.threshold(eq, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    edges = cv2.Canny(eq, otsu * 0.5, otsu)
+
+    return {
+        "steps": [
+            {
+                "label": "Original",
+                "desc": "Your uploaded image",
+                "data": encode_img(img)
+            },
+            {
+                "label": "Grayscale",
+                "desc": "Luminance channel extracted",
+                "data": encode_img(gray)
+            },
+            {
+                "label": "Histogram Equalisation",
+                "desc": "Contrast enhanced",
+                "data": encode_img(eq)
+            },
+            {
+                "label": "Edge Detection",
+                "desc": "Canny structural features isolated",
+                "data": encode_img(edges)
+            },
+        ]
+    }
